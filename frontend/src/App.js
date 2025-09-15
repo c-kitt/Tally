@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { transactionAPI } from './api/transactions';
 
 const EXPENSE_CATEGORIES = ['Food', 'Transport', 'Entertainment', 'Shopping', 'Bills', 'Other'];
 const INCOME_CATEGORIES = ['Salary', 'Freelance', 'Investment', 'Gift', 'Other'];
@@ -29,30 +30,71 @@ function App() {
     Other: 5
   });
 
+  // Load transactions from backend (optional)
+  const loadTransactionsFromBackend = async () => {
+    try {
+      const response = await transactionAPI.getAll();
+      if (response.success) {
+        // Convert backend format to frontend format
+        const frontendTransactions = response.transactions.map(t => ({
+          id: t.id,
+          amount: t.type === 'expense' ? -Math.abs(t.amount) : Math.abs(t.amount),
+          type: t.type,
+          category: t.category,
+          description: t.description,
+          date: t.date.split('T')[0] // Convert ISO to YYYY-MM-DD
+        }));
+        setTransactions(frontendTransactions);
+        console.log('Loaded', frontendTransactions.length, 'transactions from backend');
+      }
+    } catch (error) {
+      console.error('Error loading transactions:', error);
+    }
+  };
+
   const balance = currentBudget + transactions.reduce((sum, t) => sum + t.amount, 0);
   const displayedTransactions = showAll ? transactions : transactions.slice(0, 5);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.amount) return;
 
-    const newTransaction = {
-      id: Date.now(),
-      amount: formData.type === 'expense' ? -Math.abs(parseFloat(formData.amount)) : Math.abs(parseFloat(formData.amount)),
-      type: formData.type,
-      category: formData.category,
-      description: formData.description,
-      date: formData.date
-    };
+    try {
+      // Prepare data for backend (backend handles positive/negative amounts)
+      const transactionData = {
+        amount: Math.abs(parseFloat(formData.amount)),
+        type: formData.type,
+        category: formData.category,
+        description: formData.description,
+        date: new Date(formData.date).toISOString()
+      };
 
-    setTransactions([newTransaction, ...transactions]);
-    setFormData({
-      amount: '',
-      type: 'expense',
-      category: 'Food',
-      description: '',
-      date: new Date().toISOString().split('T')[0]
-    });
+      // Send to backend
+      const response = await transactionAPI.create(transactionData);
+      console.log('Transaction created:', response);
+
+      // Add to local state for immediate UI update
+      const newTransaction = {
+        id: response.transaction.id,
+        amount: formData.type === 'expense' ? -Math.abs(parseFloat(formData.amount)) : Math.abs(parseFloat(formData.amount)),
+        type: formData.type,
+        category: formData.category,
+        description: formData.description,
+        date: formData.date
+      };
+
+      setTransactions([newTransaction, ...transactions]);
+      setFormData({
+        amount: '',
+        type: 'expense',
+        category: 'Food',
+        description: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+    } catch (error) {
+      console.error('Error creating transaction:', error);
+      alert('Error saving transaction. Please try again.');
+    }
   };
 
   const deleteTransaction = (id) => {
